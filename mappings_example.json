@@ -1,0 +1,12 @@
+{
+  "Player": "player_name",
+  "Team": "team",
+  "pos": "pos",
+
+  "YDS": "pass_yds",
+  "TDS": "pass_td",
+  "INTS": "pass_int",
+
+  "YDS.1": "rush_yds",
+  "TDS.1": "rush_td"
+}
