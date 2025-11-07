@@ -66,21 +66,43 @@ def normalize_pos(series: pd.Series) -> pd.Series:
     return series.astype(str).str.strip().str.upper()
 
 def infer_pos(df: pd.DataFrame) -> pd.Series:
+    # start with whatever 'pos' exists
     pos = df.get("pos", pd.Series([""]*len(df)))
     pos = pos.fillna("").astype(str).str.strip()
-    empty = pos.eq("") | pos.isna()
     inferred = normalize_pos(pos)
 
-    idx = empty | ~inferred.isin(OFF_POS)
-    sub = df[idx]
-    qb_mask = (sub["pass_yds"]>0) | (sub["pass_td"]>0) | (sub["pass_int"]>0)
-    wr_mask = (sub["rec"]>0) | (sub["rec_yds"]>0) | (sub["rec_td"]>0)
-    rb_mask = (sub["rush_yds"]>0) | (sub["rush_td"]>0)
+    # columns we need to test
+    cols = ["pass_yds","pass_td","pass_int","rec","rec_yds","rec_td","rush_yds","rush_td"]
+    for c in cols:
+        if c not in df.columns:
+            df[c] = 0
 
+    # coerce numeric locally (no commas, blanks, etc.)
+    df_num = df.copy()
+    for c in cols:
+        df_num[c] = (
+            df_num[c]
+            .astype(str)
+            .str.replace(",", "", regex=False)
+            .str.strip()
+            .replace({"": "0", "—": "0", "-": "0", "N/A": "0", "NA": "0"})
+        )
+        df_num[c] = pd.to_numeric(df_num[c], errors="coerce").fillna(0)
+
+    # we only infer for empties / non-offensive
+    idx = (inferred.eq("")) | (~inferred.isin(OFF_POS))
+
+    qb_mask = (df_num.loc[idx, "pass_yds"] > 0) | (df_num.loc[idx, "pass_td"] > 0) | (df_num.loc[idx, "pass_int"] > 0)
+    wr_mask = (df_num.loc[idx, "rec"] > 0) | (df_num.loc[idx, "rec_yds"] > 0) | (df_num.loc[idx, "rec_td"] > 0)
+    rb_mask = (df_num.loc[idx, "rush_yds"] > 0) | (df_num.loc[idx, "rush_td"] > 0)
+
+    inferred = inferred.copy()
     inferred.loc[idx & qb_mask] = "QB"
     inferred.loc[idx & ~qb_mask & wr_mask] = "WR"
     inferred.loc[idx & ~qb_mask & ~wr_mask & rb_mask] = "RB"
+
     return inferred
+
 
 def fantasy_points(df: pd.DataFrame, scoring: dict) -> pd.DataFrame:
     df = df.copy()
@@ -250,11 +272,14 @@ if run_pipeline:
             if c not in df.columns:
                 df[c] = 0
 
+        # coerce numerics BEFORE infer_pos
+        df = coerce_numeric(df, NUMERIC_COLS)
+
         # Position handling
         if add_pos_qb:
-            df["pos"] = df.get("pos", "QB")
             df["pos"] = "QB"
         df["pos"] = infer_pos(df)
+
 
         # Filter to offensive positions (if that empties, skip filtering)
         filtered = df[df["pos"].isin(OFF_POS)].copy()
