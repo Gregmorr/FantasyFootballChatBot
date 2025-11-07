@@ -8,5 +8,7 @@
   "rec_yards": 0.1,
   "rec_td": 6,
   "bonus_100_rush_rec_yds": 0,
-  "bonus_300_pass_yds": 0
+  "bonus_300_pass_yds": 0,
+  "k_fg": 3,
+  "k_xpt": 1
 }

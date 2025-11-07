@@ -7,19 +7,19 @@ import pandas as pd
 import streamlit as st
 
 # ---------- Helpers ----------
-OFF_POS = {"QB","RB","WR","TE"}
+OFF_POS = {"QB","RB","WR","TE", "K"}
 
 STANDARD_COLS = [
     "player_name","team","pos",
     "pass_yds","pass_td","pass_int",
     "rush_yds","rush_td",
-    "rec","rec_yds","rec_td",
+    "rec","rec_yds","rec_td", "k_fg", "k_xpt"
 ]
 
 NUMERIC_COLS = [
     "pass_yds","pass_td","pass_int",
     "rush_yds","rush_td",
-    "rec","rec_yds","rec_td",
+    "rec","rec_yds","rec_td","k_fg", "k_xpt"
 ]
 
 AUTO_MAP = {
@@ -115,7 +115,9 @@ def fantasy_points(df: pd.DataFrame, scoring: dict) -> pd.DataFrame:
         df["rush_td"]   * float(scoring.get("rush_td", 0.0)) +
         df["rec"]       * float(scoring.get("rec", 0.0)) +
         df["rec_yds"]   * float(scoring.get("rec_yards", 0.0)) +
-        df["rec_td"]    * float(scoring.get("rec_td", 0.0))
+        df["rec_td"]    * float(scoring.get("rec_td", 0.0)) +
+        df["k_fg"]      * float(scoring.get("k_fg", 0.0)) +
+        df["k_xpt"]     * float(scoring.get("k_xpt", 0.0))
     )
     bonus = 0
     if float(scoring.get("bonus_100_rush_rec_yds", 0)) != 0:
@@ -217,21 +219,33 @@ if "board" not in st.session_state: st.session_state.board = None
 if "picks_log" not in st.session_state: st.session_state.picks_log = pd.DataFrame()
 
 with st.sidebar:
+    # ---------- 1) Load Projections ----------
     st.header("1) Load Projections")
     raw_csv = st.file_uploader("Projections CSV", type=["csv"])
     mapping_json = st.file_uploader("Optional mapping JSON", type=["json"])
     add_pos_qb = st.checkbox("If missing position, treat as QB data", value=False)
     st.caption("Tip: If your file is QB-only with headers like YDS/TDS/INTS, check this.")
 
-    st.header("2) Scoring (PPR default)")
+    # ---------- 2) Scoring (PPR + K) ----------
+    st.header("2) Scoring (PPR + K)")
     scoring_default = {
       "pass_yards": 0.04, "pass_td": 4, "pass_int": -2,
-      "rush_yards": 0.1, "rush_td": 6,
-      "rec": 1, "rec_yards": 0.1, "rec_td": 6,
-      "bonus_100_rush_rec_yds": 0, "bonus_300_pass_yds": 0
+      "rush_yards": 0.1,  "rush_td": 6,
+      "rec": 1,           "rec_yards": 0.1, "rec_td": 6,
+      "bonus_100_rush_rec_yds": 0, "bonus_300_pass_yds": 0,
+      "k_fg": 3,          "k_xpt": 1
     }
-    scoring_text = st.text_area("scoring.json", json.dumps(scoring_default, indent=2), height=210)
+    if "scoring_text" not in st.session_state:
+        st.session_state.scoring_text = json.dumps(scoring_default, indent=2)
 
+    col_a, col_b = st.columns([1,1])
+    with col_a:
+        if st.button("Reset scoring to defaults"):
+            st.session_state.scoring_text = json.dumps(scoring_default, indent=2)
+
+    scoring_text = st.text_area("scoring.json", st.session_state.scoring_text, height=210, key="scoring_text")
+
+    # ---------- 3) League & Tiers ----------
     st.header("3) League & Tiers")
     teams = st.number_input("Teams", 8, 20, 12)
     start_qb = st.number_input("Start QB", 0.0, 3.0, 1.0, step=0.5)
@@ -244,16 +258,19 @@ with st.sidebar:
     te_rep = st.number_input("Override TE replacement (optional)", 0, 60, 0)
     tier_gap = st.number_input("Tier gap (VORP drop to start new tier)", 2.0, 25.0, 10.0, step=1.0)
 
+    # ---------- 4) Your Roster ----------
     st.header("4) Your Roster (for suggestions)")
     have_qb = st.number_input("Have QB", 0, 5, 0)
     have_rb = st.number_input("Have RB", 0, 10, 0)
     have_wr = st.number_input("Have WR", 0, 10, 0)
     have_te = st.number_input("Have TE", 0, 5, 0)
 
+    # ---------- Actions ----------
     st.header("Actions")
     run_pipeline = st.button("Run Pipeline (Import → FP → VORP → Tiers)")
     init_board = st.button("Initialize Draft Board from Tiers")
     suggest_btn = st.button("Suggest Picks from Current Board")
+
 
 # ---------- Pipeline ----------
 if run_pipeline:
